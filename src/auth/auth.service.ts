@@ -27,15 +27,26 @@ export class AuthService {
     return null;
   }
 
-  async login(email: string, password: string) {
+  login(user: User): { accessToken: string; refreshToken: string } | null {
+    const payload = { id: user.id, email: user.email };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+    return { accessToken, refreshToken };
+  }
+
+  async refreshTokens(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string } | null> {
     try {
-      const user = await this.validateUser(email, password);
-      if (!user) {
-        return null;
-      }
+      const user: User = this.jwtService.verify(refreshToken);
       const payload = { id: user.id, email: user.email };
-      const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-      return { accessToken };
+      const newAccessToken: string = await this.jwtService.signAsync(payload, {
+        expiresIn: '15m',
+      });
+      const newRefreshToken: string = await this.jwtService.signAsync(payload, {
+        expiresIn: '7d',
+      });
+      return { accessToken: newAccessToken, refreshToken: newRefreshToken };
     } catch {
       return null;
     }
