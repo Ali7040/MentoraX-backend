@@ -9,7 +9,7 @@ import { RefreshTokenStore } from './refresh-token.store';
   imports: [
     JwtModule.register({
       secret: process.env.ACCESS_SECRET || 'secretKey',
-      signOptions: { expiresIn: '60s' },
+      signOptions: { expiresIn: '15m' }, // OWASP: Short-lived access tokens
     }),
   ],
   providers: [AuthService, JwtStrategy, RefreshTokenStore],
