@@ -45,11 +45,12 @@ export class AuthController {
     if (!token) {
       return res.status(500).json({ message: 'Token generation failed' });
     }
+    // OWASP Best Practice: HttpOnly, Secure, SameSite cookie
     res.cookie('refreshToken', token.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      httpOnly: true, // Prevents XSS attacks - JS cannot access
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      sameSite: 'strict', // CSRF protection
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/',
     });
     return res
@@ -66,9 +67,53 @@ export class AuthController {
     const tokens: { accessToken: string; refreshToken: string } | null =
       await this.authService.refreshTokens(refreshToken);
     if (!tokens) {
+      // Clear invalid cookie
+      res.clearCookie('refreshToken');
       return res.status(401).json({ message: 'Invalid refresh token' });
     }
-    return res.status(200).json(tokens);
+
+    // OWASP Best Practice: Rotate refresh token (single-use tokens)
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true, // Prevents XSS attacks - JS cannot access
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      sameSite: 'strict', // CSRF protection
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    });
+
+    // ✅ Only return access token in JSON
+    return res.status(200).json({ accessToken: tokens.accessToken });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@Req() req: Request, @Res() res: Response) {
+    const refreshToken = (req as RequestWithCookies).cookies?.refreshToken;
+    const userId = (req.user as any)?.id;
+
+    if (userId && refreshToken) {
+      await this.authService.logout(userId, refreshToken);
+    }
+
+    // Clear refresh token cookie
+    res.clearCookie('refreshToken', { path: '/' });
+    return res.status(200).json({ message: 'Logged out successfully' });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout-all')
+  async logoutAll(@Req() req: Request, @Res() res: Response) {
+    const userId = (req.user as any)?.id;
+
+    if (userId) {
+      await this.authService.logoutAll(userId);
+    }
+
+    // Clear refresh token cookie
+    res.clearCookie('refreshToken', { path: '/' });
+    return res
+      .status(200)
+      .json({ message: 'Logged out from all devices successfully' });
   }
 
   @UseGuards(JwtAuthGuard)
