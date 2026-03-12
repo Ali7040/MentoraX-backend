@@ -6,12 +6,17 @@ import {
   Req,
   UseGuards,
   Get,
+  Delete,
+  Param,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup/signup.dto';
 import { LoginDto } from './dto/login/login.dto';
 import { Response, Request } from 'express';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { Role } from './roles/role.enum';
 
 interface RequestWithCookies extends Request {
   cookies: { [key: string]: string };
@@ -26,6 +31,7 @@ export class AuthController {
     const user = await this.authService.signUp(
       signupDto.email,
       signupDto.password,
+      signupDto.role,
     );
     return res.status(201).json(user);
   }
@@ -120,5 +126,64 @@ export class AuthController {
   @Get('profile')
   getProfile(@Req() req: Request, @Res() res: Response) {
     return res.status(200).json(req.user);
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // RBAC-Protected Endpoints (Role-Based Access Control)
+  // ──────────────────────────────────────────────────────────
+
+  /**
+   * GET /auth/admin/users — Admin only
+   * Example: Platform admin views all users.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('admin/users')
+  getAllUsers(@Res() res: Response) {
+    // In production this would query the database
+    return res.status(200).json({
+      message: 'Admin access granted — list of all users',
+      data: this.authService.getAllUsers(),
+    });
+  }
+
+  /**
+   * DELETE /auth/admin/users/:id — Admin only
+   * Example: Admin removes a user from the platform.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete('admin/users/:id')
+  deleteUser(@Param('id') id: string, @Res() res: Response) {
+    return res.status(200).json({
+      message: `Admin access granted — user ${id} would be deleted`,
+    });
+  }
+
+  /**
+   * POST /auth/instructor/courses — Instructor or Admin
+   * Example: Instructor creates a new course.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.INSTRUCTOR, Role.ADMIN)
+  @Post('instructor/courses')
+  createCourse(@Body() body: any, @Res() res: Response) {
+    return res.status(201).json({
+      message: 'Instructor/Admin access granted — course created',
+      data: body,
+    });
+  }
+
+  /**
+   * GET /auth/student/courses — Any authenticated role
+   * Example: Student browses available courses.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.STUDENT, Role.INSTRUCTOR, Role.ADMIN)
+  @Get('student/courses')
+  viewCourses(@Res() res: Response) {
+    return res.status(200).json({
+      message: 'Access granted — list of available courses',
+    });
   }
 }

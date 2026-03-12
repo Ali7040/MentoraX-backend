@@ -3,11 +3,13 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { RefreshTokenStore } from './refresh-token.store';
 import { randomBytes } from 'crypto';
+import { Role } from './roles/role.enum';
 
-interface User {
+export interface User {
   id: number;
   email: string;
   password: string;
+  role: Role;
 }
 
 @Injectable()
@@ -17,11 +19,23 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly refreshTokenStore: RefreshTokenStore,
   ) {}
-  async signUp(email: string, password: string) {
+  /**
+   * Sign up a new user.
+   * OWASP Best Practice — Principle of Least Privilege:
+   *   New users default to STUDENT (lowest privilege role).
+   *   Only an admin can elevate a user's role later.
+   */
+  async signUp(email: string, password: string, role?: Role) {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user: User = { id: Date.now(), email, password: hashedPassword };
+    // Default role is STUDENT — Principle of Least Privilege (OWASP)
+    const user: User = {
+      id: Date.now(),
+      email,
+      password: hashedPassword,
+      role: role ?? Role.STUDENT,
+    };
     this.users.push(user);
-    return { id: user.id, email: user.email };
+    return { id: user.id, email: user.email, role: user.role };
   }
 
   async validateUser(email: string, password: string): Promise<User | null> {
@@ -35,7 +49,8 @@ export class AuthService {
   async login(
     user: User,
   ): Promise<{ accessToken: string; refreshToken: string } | null> {
-    const payload = { id: user.id, email: user.email };
+    // Include role in JWT payload so guards can authorize without DB lookup
+    const payload = { id: user.id, email: user.email, role: user.role };
     const family = randomBytes(16).toString('hex'); // Token family for rotation tracking
 
     const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
@@ -78,8 +93,8 @@ export class AuthService {
       // ✅ Revoke old refresh token (rotation)
       this.refreshTokenStore.revoke(storedToken);
 
-      // Generate new tokens with same family
-      const newPayload = { id: payload.id, email: payload.email };
+      // Generate new tokens with same family (carry role forward)
+      const newPayload = { id: payload.id, email: payload.email, role: payload.role };
       const newAccessToken = this.jwtService.sign(newPayload, {
         expiresIn: '15m',
       });
@@ -103,5 +118,13 @@ export class AuthService {
 
   async logoutAll(userId: number): Promise<void> {
     this.refreshTokenStore.revokeAll(userId);
+  }
+
+  /**
+   * Returns all users (without passwords).
+   * Used by admin endpoints. In production, replace with a DB query.
+   */
+  getAllUsers() {
+    return this.users.map((u) => ({ id: u.id, email: u.email, role: u.role }));
   }
 }

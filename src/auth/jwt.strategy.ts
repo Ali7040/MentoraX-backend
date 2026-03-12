@@ -11,7 +11,11 @@ import { Strategy, ExtractJwt } from 'passport-jwt';
         secretOrKey: process.env.ACCESS_SECRET || 'secretKey',
     });
   }
+    /**
+     * The return value is attached to request.user.
+     * Including `role` here makes it available to RolesGuard.
+     */
     async validate(payload: any) {
-        return { id: payload.id, email: payload.email };
+        return { id: payload.id, email: payload.email, role: payload.role };
     }
 }
